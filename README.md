@@ -1,6 +1,8 @@
 # DUKit
 A collection of utilities and functionality to help write Dual Universe lua scripts.
 
+To use simply create a new start filter in the system slot and past the contents of DUKit there. DUKit will then be available to all filters loaded after it.
+
 • Implements filtered console output. You can set the CONSOLE_LOUDNESS variable to QUIET, ERRORS, WARNINGS, or DEBUG. Calling the corresponding
 functions (debug(msg), warn(msg), err(msg)) then outputs the message based on the currently set filter. This helps to reduce the noise in the
 lua console once debugging is finished, showing only warnings or errors to the users.
