@@ -1,4 +1,4 @@
--- DUKit Version: 0.7.0
+-- DUKit Version: 0.8.0
 
 --
 -- CONSOLE OUTPUT
@@ -63,55 +63,58 @@ end
 -- SLOT DETECTION
 --
 
--- Detected Elements
-core = nil          -- core unit
-container = {}      -- container units
-databank = {}       -- databank units
-door = {}           -- door units
-industry = {}       -- industry units
-light = {}          -- light units
-screen = {}         -- screen units
-sign = {}           -- sign units
-
 -- Auto detect the units that are plugged into the control unit slots.
 function autoDetectSlots()
-    local slot_name, slot = nil, nil
-    for slot_name, slot in pairs(unit) do
-        if type(slot) == "table" and type(slot.export) == "table" and slot.getElementClass then
-            local element_class = slot.getElementClass():lower()
-            local id = slot.getId()
-            local json_data = slot.getData()
-            if element_class == "coreunitstatic" then
-                if core then
-                    error("ERROR: Only one static core supported at this time!")
+    local auto_slots = unit["auto_detect_slots"]
+    if not auto_slots then
+        auto_slots = {}
+        unit["auto_detect_slots"] = auto_slots
+        auto_slots["core"] = {}
+        auto_slots["container"] = {}
+        auto_slots["databank"] = {}
+        auto_slots["door"] = {}
+        auto_slots["industry"] = {}
+        auto_slots["light"] = {}
+        auto_slots["screen"] = {}
+        auto_slots["sign"] = {}
+        local slot_name, slot = nil, nil
+        for slot_name, slot in pairs(unit) do
+            if type(slot) == "table" and type(slot.export) == "table" and slot.getElementClass then
+                local element_class = slot.getElementClass():lower()
+                local id = slot.getId()
+                local json_data = slot.getData()
+                if element_class == "coreunitstatic" then
+                    if core then
+                        error("ERROR: Only one static core supported at this time!")
+                    end
+                    auto_slots["core"] = slot
+                    debug("Found static core")
+                elseif element_class == "databankunit" then
+                    table.insert(auto_slots["databank"], slot)
+                    debug("Found databank #"..#auto_slots["databank"])
+                elseif element_class == "doorunit" then
+                    table.insert(auto_slots["door"], slot)
+                    debug("Found door #"..#auto_slots["door"])
+                elseif element_class == "industry1" or element_class == "industry2" or element_class == "industry3" or element_class == "industry4" then
+                    table.insert(auto_slots["industry"], slot)
+                    debug("Found industry #"..#auto_slots["industry"])
+                elseif element_class == "itemcontainer" then
+                    table.insert(auto_slots["container"], slot)
+                    debug("Found container #"..#auto_slots["container"])
+                elseif element_class == "lightunit" then
+                    table.insert(auto_slots["light"], slot)
+                    debug("Found light #"..#auto_slots["light"])
+                elseif element_class == "screenunit" then
+                    table.insert(auto_slots["screen"], slot)
+                    debug("Found screen #"..#auto_slots["screen"])
+                elseif element_class == "screensignunit" then
+                    table.insert(auto_slots["sign"], slot)
+                    debug("Found sign #"..#auto_slots["sign"])
+                else
+                    debug("slot class '"..element_class.."' of type '"..type(slot).."' in "..slot_name, INFO)
+                    debug("  slot ID = "..id)
+                    debug("  slot data = "..json_data)
                 end
-                core = slot
-                debug("Found static core")
-            elseif element_class == "databankunit" then
-                table.insert(databank, slot)
-                debug("Found databank #"..#databank)
-            elseif element_class == "doorunit" then
-                table.insert(door, slot)
-                debug("Found door #"..#door)
-            elseif element_class == "industry1" or element_class == "industry2" or element_class == "industry3" or element_class == "industry4" then
-                table.insert(industry, slot)
-                debug("Found industry #"..#industry)
-            elseif element_class == "itemcontainer" then
-                table.insert(container, slot)
-                debug("Found container #"..#container)
-            elseif element_class == "lightunit" then
-                table.insert(light, slot)
-                debug("Found light #"..#light)
-            elseif element_class == "screenunit" then
-                table.insert(screen, slot)
-                debug("Found screen #"..#screen)
-            elseif element_class == "screensignunit" then
-                table.insert(sign, slot)
-                debug("Found sign #"..#sign)
-            else
-                debug("slot class '"..element_class.."' of type '"..type(slot).."' in "..slot_name, INFO)
-                debug("  slot ID = "..id)
-                debug("  slot data = "..json_data)
             end
         end
     end
@@ -129,7 +132,7 @@ function getPlayerName()
     return player_name
 end
 
--- Convert the specified value to an integer.
+-- Convert the specified value to a number.
 -- n: the value to try and convert
 -- returns the integer value
 -- An error will be raised if the value cannot be converted.
@@ -188,14 +191,13 @@ function use(unit_table, table_index, unit_op, data)
     test(table_index and (type(table_index) == "number"), "A unit index must be provided!")
     test((table_index >= 0) and (table_index <= #unit_table), "The unit index must be a value from 0 to "..#unit_table.."!")
     test(unit_op, "A unit operation function must be provided!")
-    local data = data or nil
     if table_index == 0 then
         for i, u in pairs(unit_table) do
             unit_op(i, u, data)
         end
-    else
-        unit_op(table_index, unit_table[table_index], data)
+        return
     end
+    unit_op(table_index, unit_table[table_index], data)
 end
 
 --
@@ -541,6 +543,11 @@ end
 -- DOOR UNIT
 --
 
+-- Get the number of doors.
+function doorCount()
+    return #unit["auto_detect_slots"]["door"]
+end
+
 -- Close a door.
 -- i: door index (0=all)
 function doorClose(i)
@@ -548,7 +555,7 @@ function doorClose(i)
         unit.deactivate()
         debug("Closed door #"..i)
     end
-    use(door, i, op)
+    use(unit["auto_detect_slots"]["door"], i, op)
 end
 
 -- Open a door.
@@ -558,7 +565,7 @@ function doorOpen(i)
         unit.activate()
         debug("Opened door #"..i)
     end
-    use(door, i, op)
+    use(unit["auto_detect_slots"]["door"], i, op)
 end
 
 -- Get the state of a door.
@@ -566,9 +573,10 @@ end
 -- return the door state (1=open, 0=closed)
 function doorGetState(i)
     test(i and (type(i) == "number"), "A unit index must be provided!")
-    test((i > 0) and (i <= #door), "The unit index must be a value from 1 to "..#door.."!")
+    local n_doors = doorCount()
+    test((i > 0) and (i <= n_doors), "The unit index must be a value from 1 to "..n_doors.."!")
     debug("Getting state for door #"..i)
-    st = door[i].getState()
+    st = unit["auto_detect_slots"]["door"][i].getState()
     return st
 end
 
@@ -579,12 +587,17 @@ function doorToggle(i)
         unit.toggle()
         debug("Toggled state for door #"..i)
     end
-    use(door, i, op)
+    use(unit["auto_detect_slots"]["door"], i, op)
 end
 
 --
 -- LIGHT UNIT
 --
+
+-- Get the number of lights.
+function lightCount()
+    return #unit["auto_detect_slots"]["light"]
+end
 
 -- Activate a light.
 -- i: light index (0=all)
@@ -593,7 +606,7 @@ function lightActivate(i)
         unit.activate()
         debug("Activated light #"..i)
     end
-    use(light, i, op)
+    use(unit["auto_detect_slots"]["light"], i, op)
 end
 
 -- Deactivate a light.
@@ -603,7 +616,7 @@ function lightDeactivate(i)
         unit.deactivate()
         debug("Deactivated light #"..i)
     end
-    use(light, i, op)
+    use(unit["auto_detect_slots"]["light"], i, op)
 end
 
 -- Get the perceived brightness of a light.
@@ -611,7 +624,8 @@ end
 -- returns the brightness of the light
 function lightGetBrightness(i)
     test(i and (type(i) == "number"), "A unit index must be provided!")
-    test((i > 0) and (i <= #light), "The unit index must be a value from 1 to "..#light.."!")
+    local n_lights = lightCount()
+    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
     debug("Getting brightness for light #"..i)
     rgb = lightGetRGBColor(i)
     local br = math.sqrt((0.299 * rgb[1] * rgb[1]) + (0.587 * rgb[2] * rgb[2]) + (0.114 * rgb[3] * rgb[3]))
@@ -623,9 +637,10 @@ end
 -- returns the RGB color of the light
 function lightGetRGBColor(i)
     test(i and (type(i) == "number"), "A unit index must be provided!")
-    test((i > 0) and (i <= #light), "The unit index must be a value from 1 to "..#light.."!")
+    local n_lights = lightCount()
+    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
     debug("Getting RGB for light #"..i)
-    rgb = light[i].getRGBColor()
+    rgb = unit["auto_detect_slots"]["light"][i].getRGBColor()
     debug(rgb[1]..","..rgb[2]..","..rgb[3])
     return rgb
 end
@@ -635,9 +650,10 @@ end
 -- returns the state of the light (1=on, 0=off)
 function lightGetState(i)
     test(i and (type(i) == "number"), "A unit index must be provided!")
-    test((i > 0) and (i <= #light), "The unit index must be a value from 1 to "..#light.."!")
+    local n_lights = lightCount()
+    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
     debug("Getting state for light #"..i)
-    st = light[i].getState()
+    st = unit["auto_detect_slots"]["light"][i].getState()
     return st
 end
 
@@ -645,11 +661,12 @@ end
 -- i: light index (0=all)
 -- rgb: the RGB color to set
 function lightSetRGBColor(i, rgb)
+    debug("lightSetRGBColor("..i..",".."{"..rgb[1]..","..rgb[2]..","..rgb[3].."})")
     function op(i, unit, rgb)
         unit.setRGBColor(rgb[1],rgb[2],rgb[3])
         debug("Set RGB for light #"..i)
     end
-    use(light, i, op, rgb)
+    use(unit["auto_detect_slots"]["light"], i, op, rgb)
 end
 
 -- Toggle the state of a light.
@@ -659,12 +676,17 @@ function lightToggle(i)
         unit.toggle()
         debug("Toggled state for light #"..i)
     end
-    use(light, i, op)
+    use(unit["auto_detect_slots"]["light"], i, op)
 end
 
 --
 -- SCREEN UNIT
 --
+
+-- Get the number of screens.
+function screenCount()
+    return #unit["auto_detect_slots"]["screen"]
+end
 
 -- Activate a screen.
 -- i: screen index (0=all)
@@ -673,7 +695,7 @@ function screenActivate(i)
         unit.activate()
         debug("Activated screen #"..i)
     end
-    use(screen, i, op)
+    use(unit["auto_detect_slots"]["screen"], i, op)
 end
 
 -- Deactivate a screen.
@@ -683,7 +705,7 @@ function screenDeactivate(i)
         unit.deactivate()
         debug("Deactivated screen #"..i)
     end
-    use(screen, i, op)
+    use(unit["auto_detect_slots"]["screen"], i, op)
 end
 
 -- Clear a screen.
@@ -693,7 +715,7 @@ function screenClear(i)
         unit.clear()
         debug("Cleared screen #"..i)
     end
-    use(screen, i, op)
+    use(unit["auto_detect_slots"]["screen"], i, op)
 end
 
 -- Set a screen with HTML.
@@ -704,7 +726,7 @@ function screenSetHTML(i, html)
         unit.setHTML(html)
         debug("Set HTML on screen #"..i)
     end
-    use(screen, i, op, html)
+    use(unit["auto_detect_slots"]["screen"], i, op, html)
 end
 
 -- Set a screen with SVG.
@@ -715,7 +737,7 @@ function screenSetSVG(i, svg)
         unit.setSVG(svg)
         debug("Set SVG on screen #"..i)
     end
-    use(screen, i, op, svg)
+    use(unit["auto_detect_slots"]["screen"], i, op, svg)
 end
 
 -- Set a screen with text.
@@ -726,12 +748,17 @@ function screenSetText(i, text)
         unit.setCenteredText(text)
         debug("Set text on screen #"..i)
     end
-    use(screen, i, op, text)
+    use(unit["auto_detect_slots"]["screen"], i, op, text)
 end
 
 --
 -- SIGN UNIT
 --
+
+-- Get the number of signs.
+function signCount()
+    return #unit["auto_detect_slots"]["sign"]
+end
 
 -- Activate a sign.
 -- i: sign index (0=all)
@@ -740,7 +767,7 @@ function signActivate(i)
         unit.activate()
         debug("Activated sign #"..i)
     end
-    use(sign, i, op)
+    use(unit["auto_detect_slots"]["sign"], i, op)
 end
 
 -- Deactivate a sign.
@@ -750,7 +777,7 @@ function signDeactivate(i)
         unit.deactivate()
         debug("Deactivated sign #"..i)
     end
-    use(sign, i, op)
+    use(unit["auto_detect_slots"]["sign"], i, op)
 end
 
 -- Clear a sign.
@@ -760,7 +787,7 @@ function signClear(i)
         unit.clear()
         debug("Cleared sign #"..i)
     end
-    use(sign, i, op)
+    use(unit["auto_detect_slots"]["sign"], i, op)
 end
 
 -- Set a sign with HTML.
@@ -771,7 +798,7 @@ function signSetHTML(i, html)
         unit.setHTML(html)
         debug("Set HTML on sign #"..i)
     end
-    use(sign, i, op, html)
+    use(unit["auto_detect_slots"]["sign"], i, op, html)
 end
 
 -- Set a sign with SVG.
@@ -782,7 +809,7 @@ function signSetSVG(i, svg)
         unit.setSVG(svg)
         debug("Set SVG on sign #"..i)
     end
-    use(sign, i, op, svg)
+    use(unit["auto_detect_slots"]["sign"], i, op, svg)
 end
 
 -- Set a sign with text.
@@ -793,5 +820,5 @@ function signSetText(i, text)
         unit.setCenteredText(text)
         debug("Set text on sign #"..i)
     end
-    use(sign, i, op, text)
+    use(unit["auto_detect_slots"]["sign"], i, op, text)
 end
