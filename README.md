@@ -17,3 +17,5 @@ and so on, in the order that they were added.
 
 The ScreenExample.config shows how to set content on one or more screens.
 ![](https://github.com/Dahvram/DUKit/blob/main/ScreenExample.png)
+
+Send and questions or recomendations to me at my email address or discord id.
