@@ -14,3 +14,6 @@ and so on, in the order that they were added.
 • Implements color conversion and manipulation support.
 
 • Implements helper functionality for tables.
+
+The ScreenExample.config shows how to set content on one or more screens.
+![](https://github.com/Dahvram/DUKit/blob/main/ScreenExample.png)
