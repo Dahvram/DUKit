@@ -1,4 +1,4 @@
--- DUKit Version: 0.8.0
+-- DUKit Version: 0.11.0
 
 --
 -- CONSOLE OUTPUT
@@ -9,7 +9,7 @@ ERRORS=1    -- Only errors get output
 WARNINGS=2  -- Only errors and warnings get output
 DEBUG=3     -- Everything gets output
 
-CONSOLE_LOUDNESS=DEBUG  --export: Console output filter level (QUIET, ERRORS, WARNINGS, DEBUG)
+CONSOLE_LOUDNESS=ERRORS  --export: Console output filter level (QUIET, ERRORS, WARNINGS, DEBUG)
 
 -- Send message to console.
 -- msg: text to put to console
@@ -60,67 +60,6 @@ function test(condition, errmsg, dbgmsg)
 end
 
 --
--- SLOT DETECTION
---
-
--- Auto detect the units that are plugged into the control unit slots.
-function autoDetectSlots()
-    local auto_slots = unit["auto_detect_slots"]
-    if not auto_slots then
-        auto_slots = {}
-        unit["auto_detect_slots"] = auto_slots
-        auto_slots["core"] = {}
-        auto_slots["container"] = {}
-        auto_slots["databank"] = {}
-        auto_slots["door"] = {}
-        auto_slots["industry"] = {}
-        auto_slots["light"] = {}
-        auto_slots["screen"] = {}
-        auto_slots["sign"] = {}
-        local slot_name, slot = nil, nil
-        for slot_name, slot in pairs(unit) do
-            if type(slot) == "table" and type(slot.export) == "table" and slot.getElementClass then
-                local element_class = slot.getElementClass():lower()
-                local id = slot.getId()
-                local json_data = slot.getData()
-                if element_class == "coreunitstatic" then
-                    if core then
-                        error("ERROR: Only one static core supported at this time!")
-                    end
-                    auto_slots["core"] = slot
-                    debug("Found static core")
-                elseif element_class == "databankunit" then
-                    table.insert(auto_slots["databank"], slot)
-                    debug("Found databank #"..#auto_slots["databank"])
-                elseif element_class == "doorunit" then
-                    table.insert(auto_slots["door"], slot)
-                    debug("Found door #"..#auto_slots["door"])
-                elseif element_class == "industry1" or element_class == "industry2" or element_class == "industry3" or element_class == "industry4" then
-                    table.insert(auto_slots["industry"], slot)
-                    debug("Found industry #"..#auto_slots["industry"])
-                elseif element_class == "itemcontainer" then
-                    table.insert(auto_slots["container"], slot)
-                    debug("Found container #"..#auto_slots["container"])
-                elseif element_class == "lightunit" then
-                    table.insert(auto_slots["light"], slot)
-                    debug("Found light #"..#auto_slots["light"])
-                elseif element_class == "screenunit" then
-                    table.insert(auto_slots["screen"], slot)
-                    debug("Found screen #"..#auto_slots["screen"])
-                elseif element_class == "screensignunit" then
-                    table.insert(auto_slots["sign"], slot)
-                    debug("Found sign #"..#auto_slots["sign"])
-                else
-                    debug("slot class '"..element_class.."' of type '"..type(slot).."' in "..slot_name, INFO)
-                    debug("  slot ID = "..id)
-                    debug("  slot data = "..json_data)
-                end
-            end
-        end
-    end
-end
-
---
 -- UTILITIES
 --
 
@@ -130,6 +69,19 @@ function getPlayerName()
     local player_id = unit.getMasterPlayerId()
     local player_name = system.getPlayerName(player_id)
     return player_name
+end
+
+-- Round a number to the specified decimal place.
+-- n: number to round
+-- places: the decimal places to round to
+-- returns the rounded number
+function round(n, places)
+    local mult = 10 ^ (places or 0)
+    if places ~= nil then
+        return math.floor(n * mult + 0.5) / mult
+    else
+        return math.floor((n * mult + 0.5) / mult)
+    end
 end
 
 -- Convert the specified value to a number.
@@ -178,26 +130,26 @@ function toStr(n)
     if t and type(t) == "string" then
         return t
     end
+    if t == nil then
+        return "nil"
+    end
     err("ERROR: Unable to convert value '"..n.."' to string!")
 end
 
 -- Select and use an element.
 -- unit_table: the table of elements to select from
--- table_index: index of the unit in the table to use (0 will iterate all units in table)
+-- unit_id: id of the unit in the table to use (nil/"nil" will iterate all units in table)
 -- unit_op: the function to call with the selected unit
 -- data: data to be passed to the unit_op function
-function use(unit_table, table_index, unit_op, data)
-    test(unit_table, "A unit table must be provided!")
-    test(table_index and (type(table_index) == "number"), "A unit index must be provided!")
-    test((table_index >= 0) and (table_index <= #unit_table), "The unit index must be a value from 0 to "..#unit_table.."!")
-    test(unit_op, "A unit operation function must be provided!")
-    if table_index == 0 then
-        for i, u in pairs(unit_table) do
-            unit_op(i, u, data)
+function use(unit_table, unit_id, unit_op, data)
+    if unit_id == nil or unit_id == "nil" then
+        for id, u in pairs(unit_table) do
+            unit_op(id, u, data)
         end
         return
     end
-    unit_op(table_index, unit_table[table_index], data)
+    unit_id = toStr(unit_id)
+    unit_op(unit_id, unit_table[unit_id], data)
 end
 
 --
@@ -345,22 +297,10 @@ end
 -- Utility functions to support a table of strings, numbers or objects.
 --
 
-local TABLE_ERROR = "ERROR: A table must be provided!"
-local INDEX_ERROR = "ERROR: An index must be provided!"
-local KEY_ERROR   = "ERROR: A key must be provided!"
-local JSON_ERROR  = "ERROR: A JSON string must be provided!"
-
--- Create an empty table.
--- returns an empty table
-function tableCreate()
-    return {}
-end
-
 -- Get the number of items in the specified table.
 -- tbl: the table to get item count for
 -- returns the number of items in table
 function tableCount(tbl)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableCount(tbl)")
     local len = 0
     for k, v in pairs(tbl) do
         len = len + 1
@@ -372,7 +312,6 @@ end
 -- tbl: the table to modify
 -- itm: the item to append
 function tableAppendItem(tbl, itm)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableAppendItem(tbl, itm)")
     table.insert(tbl, itm)
 end
 
@@ -381,8 +320,6 @@ end
 -- key: the key for the entry
 -- itm: the value for the entry
 function tableAddItem(tbl, key, itm)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableAddItem(tbl, itm, key)")
-    test(key and (type(key) == "number" or type(key) == "string"), KEY_ERROR, "TEST: Invalid key in tableAddItem(tbl, itm, key)")
     tbl[key] = itm
 end
 
@@ -391,8 +328,6 @@ end
 -- idx: the index for the entry
 -- itm: the value for the entry
 function tableInsertItem(tbl, idx, itm)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableInsertItem(tbl, itm, idx)")
-    test(idx and (type(idx) == "number"), INDEX_ERROR, "TEST: Invalid index in tableInsertItem(tbl, itm, idx)")
     table.insert(tbl, itm, idx)
 end
 
@@ -401,7 +336,6 @@ end
 -- itm: the falue of the entry to look for
 -- returns the index of the first occurrence of itm (nil=not found)
 function tableFindItemKey(tbl, itm)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableFindItemKey(tbl, itm)")
     for k, t in pairs(tbl) do
         if t == itm then
             return k
@@ -414,7 +348,6 @@ end
 -- tbl: the table to search
 -- itm: the value of the entry to remove
 function tableRemoveItem(tbl, itm)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableRemoveItem(tbl, itm)")
     local key = tableFindItemKey(tbl, itm)
     if key then
         tableRemoveItemAt(tbl, key)
@@ -425,8 +358,6 @@ end
 -- tbl: the table to modify
 -- key: the key/index of the entry to remove
 function tableRemoveItemAt(tbl, key)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableRemoveItemAt(tbl, key)")
-    test(key and (type(key) == "number" or type(key) == "string"), KEY_ERROR, "TEST: Invalid key in tableRemoveItemAt(tbl, key)")
     table.remove(tbl, key)
 end
 
@@ -436,13 +367,22 @@ end
 -- default: the value to return if the key/index is not found (default is nil)
 -- returns the entry at the key/index or the specified default value
 function tableItemAt(tbl, key, default)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableItemAt(tbl, key)")
-    test(key and (type(key) == "number" or type(key) == "string"), KEY_ERROR, "TEST: Invalid key in tableItemAt(tbl, key)")
     local t = tbl[key]
     if t == nil then
         t = default
     end
     return t
+end
+
+-- Iterate a table and process each key, value pair with the provided function.
+-- tbl: the table to iterate
+-- func: the function to call with the key and value
+function tableIterate(tbl, func)
+    if tbl and func then
+        for k, v in pairs(tbl) do
+            func(k, v)
+        end
+    end
 end
 
 -- Show the contents of a table.
@@ -512,7 +452,6 @@ end
 -- tbl: the table to identify.
 -- returns the table type
 function tableType(tbl)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableType(tbl)")
     for k, _ in pairs(tbl) do
         if not (type(k) == "number") then
             return "map"
@@ -525,7 +464,6 @@ end
 -- tbl: the table to convert
 -- returns a JSON string representation of the table
 function tableToJsonString(tbl)
-    test(tbl and type(tbl) == "table", TABLE_ERROR, "TEST: Invalid table in tableToJsonString(tbl)")
     local jsn = json.encode(tbl)
     return jsn
 end
@@ -534,9 +472,128 @@ end
 -- jsn: the JSON string to convert
 -- returns a table containing the values from the JSON string
 function jsonStringToTable(jsn)
-    test(jsn and type(jsn) == "string", JSON_ERROR, "TEST: Invalid JSON string in jsonStringToTable(jsn)")
     local tbl = json.decode(jsn)
     return tbl
+end
+
+--
+-- SLOT DETECTION
+--
+
+-- Auto detect the units that are plugged into the control unit slots.
+function autoDetectSlots()
+    local auto_slots = unit["auto_detect_slots"]
+    if not auto_slots then
+        auto_slots = {}
+        unit["auto_detect_slots"] = auto_slots
+        auto_slots["core"] = {}
+        auto_slots["container"] = {}
+        auto_slots["databank"] = {}
+        auto_slots["door"] = {}
+        auto_slots["industry"] = {}
+        auto_slots["light"] = {}
+        auto_slots["screen"] = {}
+        auto_slots["sign"] = {}
+        local slot_name, slot = nil, nil
+        for slot_name, slot in pairs(unit) do
+            if type(slot) == "table" and type(slot.export) == "table" and slot.getElementClass then
+                local element_class = slot.getElementClass():lower()
+                local id = toStr(slot.getId())
+                local json_data = slot.getData()
+                if element_class == "coreunitstatic" then
+                    if tableCount(auto_slots["core"]) == 1 then
+                        error("ERROR: Only one static core supported at this time!")
+                    end
+                    tableAddItem(auto_slots["core"], id, slot)
+                    debug("Found static core (id:"..id..")")
+                elseif element_class == "databankunit" then
+                    tableAddItem(auto_slots["databank"], id, slot)
+                    debug("Found databank (id:"..id..")")
+                elseif element_class == "doorunit" then
+                    tableAddItem(auto_slots["door"], id, slot)
+                    debug("Found door (id:"..id..")")
+                elseif element_class == "industry1" or element_class == "industry2" or element_class == "industry3" or element_class == "industry4" then
+                    tableAddItem(auto_slots["industry"], id, slot)
+                    debug("Found industry (id:"..id..")")
+                elseif element_class == "itemcontainer" then
+                    tableAddItem(auto_slots["container"], id, slot)
+                    debug("Found container (id:"..id..")")
+                elseif element_class == "lightunit" then
+                    tableAddItem(auto_slots["light"], id, slot)
+                    debug("Found light (id:"..id..")")
+                elseif element_class == "screenunit" then
+                    tableAddItem(auto_slots["screen"], id, slot)
+                    debug("Found screen (id:"..id..")")
+                elseif element_class == "screensignunit" then
+                    tableAddItem(auto_slots["sign"], id, slot)
+                    debug("Found sign (id:"..id..")")
+                else
+                    debug("slot class '"..element_class.."' of type '"..type(slot).."' in "..slot_name, INFO)
+                    debug("  slot ID = "..id)
+                    debug("  slot data = "..json_data)
+                end
+            end
+        end
+    end
+end
+
+--
+-- CONTAINER UNIT
+--
+
+-- Get the number of containers.
+function containerCount()
+    debug("Getting the count of containers")
+    return tableCount(unit["auto_detect_slots"]["container"])
+end
+
+-- Get the mass of the items in the container (in kg).
+-- id: the ID of the container
+-- Returns the mass of the contents
+function containerGetItemsMass(id)
+    id = toStr(id)
+    debug("Getting mass of items in container ["..id.."]")
+    local m = unit["auto_detect_slots"]["container"][id].getItemsMass()
+    debug(m)
+    return m
+end
+
+-- Get the volume of the items in the container (in L).
+-- id: the id of the container
+-- Returns the volume of the contents
+function containerGetItemsVolume(id)
+    id = toStr(id)
+    debug("Getting volume of items in container ["..id.."]")
+    local v = unit["auto_detect_slots"]["container"][id].getItemsVolume()
+    debug(v)
+    return v
+end
+
+-- Get the maximum volume the container can hold (in L).
+-- id: the id of the container
+-- Return the container maximum volume
+function containerGetMaxVolume(id)
+    id = toStr(id)
+    debug("Getting maximum volume of container ["..id.."]")
+    local v = unit["auto_detect_slots"]["container"][id].getMaxVolume()
+    debug(v)
+    return v
+end
+
+-- Get the mass of the empty container (in kg).
+-- id: the id of the container
+-- Return the mass of the container when empty
+function containerGetSelfMass(id)
+    id = toStr(id)
+    debug("Getting mass of empty container ["..id.."]")
+    local m = unit["auto_detect_slots"]["container"][id].getSelfMass()
+    debug(m)
+    return m
+end
+
+function containerIterate(func)
+    debug("Iterating container table")
+    tableIterate(unit["auto_detect_slots"]["container"], func)
 end
 
 --
@@ -545,49 +602,53 @@ end
 
 -- Get the number of doors.
 function doorCount()
-    return #unit["auto_detect_slots"]["door"]
+    debug("Getting the count of doors")
+    return tableCount(unit["auto_detect_slots"]["door"])
 end
 
 -- Close a door.
--- i: door index (0=all)
-function doorClose(i)
-    function op(i, unit, data)
+-- id: door id (nil=all)
+function doorClose(id)
+    function op(id, unit, data)
+        debug("Closing door ["..id.."]")
         unit.deactivate()
-        debug("Closed door #"..i)
     end
-    use(unit["auto_detect_slots"]["door"], i, op)
+    use(unit["auto_detect_slots"]["door"], id, op, nil)
 end
 
 -- Open a door.
--- i: door index (0=all)
-function doorOpen(i)
-    function op(i, unit, data)
+-- id: door id (nil=all)
+function doorOpen(id)
+    function op(id, unit, data)
+        debug("Opening door ["..id.."]")
         unit.activate()
-        debug("Opened door #"..i)
     end
-    use(unit["auto_detect_slots"]["door"], i, op)
+    use(unit["auto_detect_slots"]["door"], id, op, nil)
 end
 
 -- Get the state of a door.
--- i: door index
+-- id: door id
 -- return the door state (1=open, 0=closed)
-function doorGetState(i)
-    test(i and (type(i) == "number"), "A unit index must be provided!")
-    local n_doors = doorCount()
-    test((i > 0) and (i <= n_doors), "The unit index must be a value from 1 to "..n_doors.."!")
-    debug("Getting state for door #"..i)
-    st = unit["auto_detect_slots"]["door"][i].getState()
+function doorGetState(id)
+    id = toStr(id)
+    debug("Getting state for door ["..id.."]")
+    local st = unit["auto_detect_slots"]["door"][id].getState()
     return st
 end
 
 -- Toggle the state of a door.
--- i: door index (0=all)
-function doorToggle(i)
-    function op(i, unit, data)
+-- id: door id (nil=all)
+function doorToggle(id)
+    function op(id, unit, data)
+        debug("Toggling state for door ["..id.."]")
         unit.toggle()
-        debug("Toggled state for door #"..i)
     end
-    use(unit["auto_detect_slots"]["door"], i, op)
+    use(unit["auto_detect_slots"]["door"], id, op, nil)
+end
+
+function doorIterate(func)
+    debug("Iterating door table")
+    tableIterate(unit["auto_detect_slots"]["door"], func)
 end
 
 --
@@ -596,87 +657,85 @@ end
 
 -- Get the number of lights.
 function lightCount()
-    return #unit["auto_detect_slots"]["light"]
+    debug("Getting count of lights")
+    return tableCount(unit["auto_detect_slots"]["light"])
 end
 
 -- Activate a light.
--- i: light index (0=all)
-function lightActivate(i)
-    function op(i, unit, data)
+-- id: light id (nil=all)
+function lightActivate(id)
+    function op(id, unit, data)
+        debug("Activating light ["..id.."]")
         unit.activate()
-        debug("Activated light #"..i)
     end
-    use(unit["auto_detect_slots"]["light"], i, op)
+    use(unit["auto_detect_slots"]["light"], id, op, nil)
 end
 
 -- Deactivate a light.
--- i: light index (0=all)
-function lightDeactivate(i)
-    function op(i, unit, data)
+-- id: light id (nil=all)
+function lightDeactivate(id)
+    function op(id, unit, data)
+        debug("Deactivating light ["..id.."]")
         unit.deactivate()
-        debug("Deactivated light #"..i)
     end
-    use(unit["auto_detect_slots"]["light"], i, op)
+    use(unit["auto_detect_slots"]["light"], id, op, nil)
 end
 
 -- Get the perceived brightness of a light.
--- i: light index
+-- id: light id
 -- returns the brightness of the light
-function lightGetBrightness(i)
-    test(i and (type(i) == "number"), "A unit index must be provided!")
-    local n_lights = lightCount()
-    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
-    debug("Getting brightness for light #"..i)
-    rgb = lightGetRGBColor(i)
+function lightGetBrightness(id)
+    id = toStr(id)
+    debug("Getting brightness for light ["..id.."]")
+    local rgb = lightGetRGBColor(id)
     local br = math.sqrt((0.299 * rgb[1] * rgb[1]) + (0.587 * rgb[2] * rgb[2]) + (0.114 * rgb[3] * rgb[3]))
     return br
 end
 
 -- Get the RGB color of a light.
--- i: light index
+-- id: light id
 -- returns the RGB color of the light
-function lightGetRGBColor(i)
-    test(i and (type(i) == "number"), "A unit index must be provided!")
-    local n_lights = lightCount()
-    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
-    debug("Getting RGB for light #"..i)
-    rgb = unit["auto_detect_slots"]["light"][i].getRGBColor()
-    debug(rgb[1]..","..rgb[2]..","..rgb[3])
+function lightGetRGBColor(id)
+    id = toStr(id)
+    debug("Getting RGB for light ["..id.."]")
+    local rgb = unit["auto_detect_slots"]["light"][id].getRGBColor()
     return rgb
 end
 
 -- Get the state of a light.
--- i: light index
+-- id: light id
 -- returns the state of the light (1=on, 0=off)
-function lightGetState(i)
-    test(i and (type(i) == "number"), "A unit index must be provided!")
-    local n_lights = lightCount()
-    test((i > 0) and (i <= n_lights), "The unit index must be a value from 1 to "..n_lights.."!")
-    debug("Getting state for light #"..i)
-    st = unit["auto_detect_slots"]["light"][i].getState()
+function lightGetState(id)
+    id = toStr(id)
+    debug("Getting state for light ["..id.."]")
+    local st = unit["auto_detect_slots"]["light"][id].getState()
     return st
 end
 
 -- Set the RGB color of a light.
--- i: light index (0=all)
+-- id: light id (nil=all)
 -- rgb: the RGB color to set
-function lightSetRGBColor(i, rgb)
-    debug("lightSetRGBColor("..i..",".."{"..rgb[1]..","..rgb[2]..","..rgb[3].."})")
-    function op(i, unit, rgb)
+function lightSetRGBColor(id, rgb)
+    function op(id, unit, rgb)
+        debug("Setting RGB for light ["..id.."]")
         unit.setRGBColor(rgb[1],rgb[2],rgb[3])
-        debug("Set RGB for light #"..i)
     end
-    use(unit["auto_detect_slots"]["light"], i, op, rgb)
+    use(unit["auto_detect_slots"]["light"], id, op, rgb)
 end
 
 -- Toggle the state of a light.
--- i: light index (0=all)
-function lightToggle(i)
-    function op(i, unit, data)
+-- id: light id (nil=all)
+function lightToggle(id)
+    function op(id, unit, data)
+        debug("Toggling state for light ["..id.."]")
         unit.toggle()
-        debug("Toggled state for light #"..i)
     end
-    use(unit["auto_detect_slots"]["light"], i, op)
+    use(unit["auto_detect_slots"]["light"], id, op, nil)
+end
+
+function lightIterate(func)
+    debug("Iterating light table")
+    tableIterate(unit["auto_detect_slots"]["light"], func)
 end
 
 --
@@ -685,70 +744,76 @@ end
 
 -- Get the number of screens.
 function screenCount()
-    return #unit["auto_detect_slots"]["screen"]
+    debug("Getting screen count")
+    return tableCount(unit["auto_detect_slots"]["screen"])
 end
 
 -- Activate a screen.
--- i: screen index (0=all)
-function screenActivate(i)
-    function op(i, unit, data)
+-- id: screen index (nil=all)
+function screenActivate(id)
+    function op(id, unit, data)
+        debug("Activating screen ["..id.."]")
         unit.activate()
-        debug("Activated screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op)
+    use(unit["auto_detect_slots"]["screen"], id, op, nil)
 end
 
 -- Deactivate a screen.
--- i: screen index (0=all)
-function screenDeactivate(i)
-    function op(i, unit, data)
+-- id: screen id (nil=all)
+function screenDeactivate(id)
+    function op(id, unit, data)
+        debug("Deactivating screen ["..id.."]")
         unit.deactivate()
-        debug("Deactivated screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op)
+    use(unit["auto_detect_slots"]["screen"], id, op, nil)
 end
 
 -- Clear a screen.
--- i: screen index (0=all)
-function screenClear(i)
-    function op(i, unit, data)
+-- id: screen id (nil=all)
+function screenClear(id)
+    function op(id, unit, data)
+        debug("Clearing screen ["..id.."]")
         unit.clear()
-        debug("Cleared screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op)
+    use(unit["auto_detect_slots"]["screen"], id, op, nil)
 end
 
 -- Set a screen with HTML.
--- i: screen index (0=all)
+-- id: screen id (nil=all)
 -- html: the HTML to set
-function screenSetHTML(i, html)
-    function op(i, unit, html)
+function screenSetHTML(id, html)
+    function op(id, unit, html)
+        debug("Setting HTML on screen ["..id.."]")
         unit.setHTML(html)
-        debug("Set HTML on screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op, html)
+    use(unit["auto_detect_slots"]["screen"], id, op, html)
 end
 
 -- Set a screen with SVG.
--- i: screen index (0=all)
+-- id: screen id (nil=all)
 -- svg: the SVG to set
-function screenSetSVG(i, svg)
-    function op(i, unit, svg)
+function screenSetSVG(id, svg)
+    function op(id, unit, svg)
+        debug("Setting SVG on screen ["..id.."]")
         unit.setSVG(svg)
-        debug("Set SVG on screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op, svg)
+    use(unit["auto_detect_slots"]["screen"], id, op, svg)
 end
 
 -- Set a screen with text.
--- i: screen index (0=all)
+-- id: screen id (nil=all)
 -- text: the text to set
-function screenSetText(i, text)
-    function op(i, unit, text)
+function screenSetText(id, text)
+    function op(id, unit, text)
+        debug("Setting TEXT on screen ["..id.."]")
         unit.setCenteredText(text)
-        debug("Set text on screen #"..i)
     end
-    use(unit["auto_detect_slots"]["screen"], i, op, text)
+    use(unit["auto_detect_slots"]["screen"], id, op, text)
+end
+
+function screenIterate(func)
+    debug("Iterating screen table")
+    tableIterate(unit["auto_detect_slots"]["screen"], func)
 end
 
 --
@@ -757,68 +822,74 @@ end
 
 -- Get the number of signs.
 function signCount()
-    return #unit["auto_detect_slots"]["sign"]
+    debug("Getting count of signs.")
+    return tableCount(unit["auto_detect_slots"]["sign"])
 end
 
 -- Activate a sign.
--- i: sign index (0=all)
-function signActivate(i)
-    function op(i, unit, data)
+-- id: sign id (nil=all)
+function signActivate(id)
+    function op(id, unit, data)
+        debug("Activating sign ["..id.."]")
         unit.activate()
-        debug("Activated sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op)
+    use(unit["auto_detect_slots"]["sign"], id, op, nil)
 end
 
 -- Deactivate a sign.
--- i: sign index (0=all)
-function signDeactivate(i)
-    function op(i, unit, data)
+-- id: sign id (nil=all)
+function signDeactivate(id)
+    function op(id, unit, data)
+        debug("Deactivating sign ["..id.."]")
         unit.deactivate()
-        debug("Deactivated sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op)
+    use(unit["auto_detect_slots"]["sign"], id, op, nil)
 end
 
 -- Clear a sign.
--- i: sign index (0=all)
-function signClear(i)
-    function op(i, unit, data)
+-- id: sign id (nil=all)
+function signClear(id)
+    function op(id, unit, data)
+        debug("Clearing sign ["..id.."]")
         unit.clear()
-        debug("Cleared sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op)
+    use(unit["auto_detect_slots"]["sign"], id, op, nil)
 end
 
 -- Set a sign with HTML.
--- i: sign index (0=all)
+-- id: sign id (nil=all)
 -- html: the HTML to set
-function signSetHTML(i, html)
-    function op(i, unit, html)
+function signSetHTML(id, html)
+    function op(id, unit, html)
+        debug("Setting HTML on sign ["..id.."]")
         unit.setHTML(html)
-        debug("Set HTML on sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op, html)
+    use(unit["auto_detect_slots"]["sign"], id, op, html)
 end
 
 -- Set a sign with SVG.
--- i: sign index (0=all)
+-- id: sign id (nil=all)
 -- svg: the SVG to set
-function signSetSVG(i, svg)
-    function op(i, unit, svg)
+function signSetSVG(id, svg)
+    function op(id, unit, svg)
+        debug("Setting SVG on sign ["..id.."]")
         unit.setSVG(svg)
-        debug("Set SVG on sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op, svg)
+    use(unit["auto_detect_slots"]["sign"], id, op, svg)
 end
 
 -- Set a sign with text.
--- i: sign index (0=all)
+-- id: sign id (nil=all)
 -- text: the text to set
-function signSetText(i, text)
-    function op(i, unit, text)
+function signSetText(id, text)
+    function op(id, unit, text)
+        debug("Setting TEXT on sign ["..id.."]")
         unit.setCenteredText(text)
-        debug("Set text on sign #"..i)
     end
-    use(unit["auto_detect_slots"]["sign"], i, op, text)
+    use(unit["auto_detect_slots"]["sign"], id, op, text)
+end
+
+function signIterate(func)
+    debug("Iterating sign table")
+    tableIterate(unit["auto_detect_slots"]["sign"], func)
 end
